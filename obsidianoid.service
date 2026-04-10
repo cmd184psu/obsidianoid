@@ -1,0 +1,49 @@
+[Unit]
+Description=Obsidianoid - Obsidian vault web viewer
+Documentation=https://github.com/cdelezenski/obsidianoid
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+
+# Run as a dedicated user for security. Create with:
+#   sudo useradd -r -s /bin/false -d /opt/obsidianoid obsidianoid
+# Or set User= to your own username if running as yourself.
+User=obsidianoid
+Group=obsidianoid
+
+# The binary and its arguments
+ExecStart=/usr/local/bin/obsidianoid
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Tell the server where the static files live
+Environment=OBSIDIANOID_STATIC=/opt/obsidianoid/static
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/obsidianoid
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+# Allow binding to port 8989 without root
+# If port < 1024, also add: AmbientCapabilities=CAP_NET_BIND_SERVICE
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=obsidianoid
+
+[Install]
+WantedBy=multi-user.target
