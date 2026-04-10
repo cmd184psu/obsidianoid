@@ -1,6 +1,6 @@
 [Unit]
 Description=Obsidianoid - Obsidian vault web viewer
-Documentation=https://github.com/cdelezenski/obsidianoid
+Documentation=https://github.com/cmd184psu/obsidianoid
 After=network.target
 Wants=network.target
 
@@ -10,8 +10,8 @@ Type=simple
 # Run as a dedicated user for security. Create with:
 #   sudo useradd -r -s /bin/false -d /opt/obsidianoid obsidianoid
 # Or set User= to your own username if running as yourself.
-User=obsidianoid
-Group=obsidianoid
+User=
+Group=
 
 # The binary and its arguments
 ExecStart=/usr/local/bin/obsidianoid
