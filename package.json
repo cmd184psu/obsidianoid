@@ -2,8 +2,8 @@
   "name": "obsidianoid",
   "private": true,
   "scripts": {
-    "build": "esbuild static/js/threads.ts --target=es2020 --outfile=static/js/threads.js",
-    "build:dev": "esbuild static/js/threads.ts --target=es2020 --outfile=static/js/threads.js --sourcemap",
+    "build": "esbuild static/js/threads.ts static/js/app.ts --target=es2020 --outdir=static/js/",
+    "build:dev": "esbuild static/js/threads.ts static/js/app.ts --target=es2020 --outdir=static/js/ --sourcemap",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
