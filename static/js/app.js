@@ -6,6 +6,8 @@ const state = {
   treeData: null,
   filterText: '',
   mode: 'notes',
+  activeVault: 0,
+  vaults: [],
 };
 
 /* ─── Element refs ─── */
@@ -31,6 +33,22 @@ const newNoteDialog  = document.getElementById('new-note-dialog');
 const newNoteForm    = document.getElementById('new-note-form');
 const newNotePath    = document.getElementById('new-note-path');
 const btnCancelNew   = document.getElementById('btn-cancel-new');
+const vaultSelector  = document.getElementById('vault-selector');
+const btnHamburger   = document.getElementById('btn-hamburger');
+const themePanel     = document.getElementById('theme-panel');
+const themeOptions   = document.getElementById('theme-options');
+
+/* ─── Theme definitions ─── */
+const THEMES = [
+  { name: 'dark',   label: 'Dark',   color: '#7c6af7' },
+  { name: 'forest', label: 'Forest', color: '#4dbb6e' },
+  { name: 'ocean',  label: 'Ocean',  color: '#5b9cf6' },
+  { name: 'ember',  label: 'Ember',  color: '#f0a04a' },
+  { name: 'rose',   label: 'Rose',   color: '#e05c7a' },
+];
+
+/* ─── Vault param helper ─── */
+function vaultParam() { return `vault=${state.activeVault}`; }
 
 /* ─── Toast ─── */
 let toastTimer = null;
@@ -115,7 +133,7 @@ function renderTree() {
 
 async function fetchTree() {
   try {
-    const res = await fetch('/api/tree');
+    const res = await fetch(`/api/tree?${vaultParam()}`);
     if (!res.ok) throw new Error('tree fetch failed');
     state.treeData = await res.json();
     renderTree();
@@ -137,7 +155,7 @@ async function loadNote(path) {
     if (!confirm('You have unsaved changes. Discard and open new note?')) return;
   }
   try {
-    const res = await fetch(`/api/note?path=${encodeURIComponent(path)}`);
+    const res = await fetch(`/api/note?${vaultParam()}&path=${encodeURIComponent(path)}`);
     if (!res.ok) { showToast('Failed to load note', 'error'); return; }
     const text = await res.text();
     state.currentPath = path;
@@ -174,7 +192,7 @@ async function renderPreview(text) {
 async function reloadCurrentNote() {
   if (!state.currentPath || state.isDirty) return;
   try {
-    const res = await fetch(`/api/note?path=${encodeURIComponent(state.currentPath)}`);
+    const res = await fetch(`/api/note?${vaultParam()}&path=${encodeURIComponent(state.currentPath)}`);
     if (!res.ok) return;
     const text = await res.text();
     editorPane.value = text;
@@ -182,14 +200,16 @@ async function reloadCurrentNote() {
   } catch (e) { /* silently ignore network errors during background reload */ }
 }
 
-/* ─── Server-Sent Events: watch for vault changes from other clients ─── */
-function connectEvents() {
-  const es = new EventSource('/api/events');
-  es.addEventListener('note-changed', (e) => {
+/* ─── Server-Sent Events ─── */
+let eventSource = null;
+
+function reconnectEvents() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  eventSource = new EventSource(`/api/events?${vaultParam()}`);
+  eventSource.addEventListener('note-changed', (e) => {
     const data = JSON.parse(e.data);
     if (data.path === state.currentPath) reloadCurrentNote();
   });
-  // EventSource reconnects automatically on error; no explicit onerror handler needed.
 }
 
 /* ─── Editor / Preview toggle ─── */
@@ -238,7 +258,7 @@ async function toggleMode() {
 async function saveNote() {
   if (!state.currentPath) return;
   try {
-    const res = await fetch(`/api/note?path=${encodeURIComponent(state.currentPath)}`, {
+    const res = await fetch(`/api/note?${vaultParam()}&path=${encodeURIComponent(state.currentPath)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'text/plain' },
       body: editorPane.value,
@@ -289,9 +309,8 @@ newNoteForm.addEventListener('submit', async (e) => {
   if (!path) return;
   if (!path.endsWith('.md')) path += '.md';
   newNoteDialog.close();
-  // create empty note
   try {
-    const res = await fetch(`/api/note?path=${encodeURIComponent(path)}`, {
+    const res = await fetch(`/api/note?${vaultParam()}&path=${encodeURIComponent(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'text/plain' },
       body: `# ${path.replace(/.*\//, '').replace('.md', '')}\n\n`,
@@ -336,10 +355,10 @@ searchInput.addEventListener('input', () => {
 /* ─── Git sync ─── */
 async function checkGitAvailable() {
   try {
-    const res = await fetch('/api/git/status');
+    const res = await fetch(`/api/git/status?${vaultParam()}`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.available) btnGitSync.hidden = false;
+    btnGitSync.hidden = !data.available;
   } catch (e) { /* vault has no git repo — button stays hidden */ }
 }
 
@@ -359,7 +378,7 @@ gitSyncForm.addEventListener('submit', async (e) => {
   gitSyncDialog.close();
   btnGitSync.disabled = true;
   try {
-    const res = await fetch('/api/git/sync', {
+    const res = await fetch(`/api/git/sync?${vaultParam()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
@@ -390,8 +409,81 @@ function setMode(mode) {
 document.getElementById('btn-mode-notes').addEventListener('click', () => setMode('notes'));
 document.getElementById('btn-mode-threads').addEventListener('click', () => setMode('threads'));
 
+/* ─── Theme panel ─── */
+function setTheme(name) {
+  document.documentElement.dataset.theme = name;
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === name);
+  });
+}
+
+function buildThemePanel() {
+  THEMES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'theme-btn';
+    btn.dataset.theme = t.name;
+    btn.innerHTML = `<span class="theme-swatch" style="background:${t.color}"></span>${t.label}`;
+    btn.addEventListener('click', () => setTheme(t.name));
+    themeOptions.appendChild(btn);
+  });
+}
+
+function toggleThemePanel() {
+  const hidden = themePanel.hasAttribute('hidden');
+  if (hidden) {
+    themePanel.removeAttribute('hidden');
+    btnHamburger.classList.add('active');
+  } else {
+    themePanel.setAttribute('hidden', '');
+    btnHamburger.classList.remove('active');
+  }
+}
+
+btnHamburger.addEventListener('click', (e) => { e.stopPropagation(); toggleThemePanel(); });
+document.addEventListener('click', (e) => {
+  if (!themePanel.hasAttribute('hidden') && !themePanel.contains(e.target) && e.target !== btnHamburger) {
+    themePanel.setAttribute('hidden', '');
+    btnHamburger.classList.remove('active');
+  }
+});
+
+/* ─── Vault switching ─── */
+async function fetchVaults() {
+  try {
+    const res = await fetch('/api/vaults');
+    if (!res.ok) return;
+    state.vaults = await res.json();
+    vaultSelector.innerHTML = '';
+    state.vaults.forEach((v, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = v.name;
+      vaultSelector.appendChild(opt);
+    });
+    if (state.vaults.length > 0) setTheme(state.vaults[0].theme || 'dark');
+  } catch (e) { /* continue with vault 0 */ }
+}
+
+function switchVault(idx) {
+  state.activeVault = idx;
+  state.currentPath = null;
+  state.isDirty = false;
+  noteTitle.textContent = '';
+  btnToggle.disabled = true;
+  btnSave.disabled = true;
+  setEditorMode();
+  const theme = (state.vaults[idx] && state.vaults[idx].theme) ? state.vaults[idx].theme : 'dark';
+  setTheme(theme);
+  reconnectEvents();
+  checkGitAvailable();
+  fetchTree();
+}
+
+vaultSelector.addEventListener('change', () => switchVault(parseInt(vaultSelector.value)));
+
 /* ─── Init ─── */
+buildThemePanel();
 ThreadsView.init();
-connectEvents();
+reconnectEvents();
 checkGitAvailable();
-fetchTree();
+fetchVaults().then(fetchTree);

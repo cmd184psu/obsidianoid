@@ -26,15 +26,21 @@ window.ThreadsView = (function (): ThreadsViewAPI {
   let draftContent = '';
   const renderCache = new Map<string, string>(); // content string → rendered HTML
 
+  /* ─── Vault param (reads the selector populated by app.js) ─── */
+  function vaultParam(): string {
+    const sel = document.getElementById('vault-selector') as HTMLSelectElement | null;
+    return sel ? `vault=${sel.value}` : 'vault=0';
+  }
+
   /* ─── API ─── */
   async function fetchThreads(): Promise<Thread[]> {
-    const res = await fetch('/api/threads');
+    const res = await fetch(`/api/threads?${vaultParam()}`);
     if (!res.ok) throw new Error(`GET /api/threads: ${res.status}`);
     return res.json() as Promise<Thread[]>;
   }
 
   async function saveThreads(ts: Thread[]): Promise<void> {
-    const res = await fetch('/api/threads', {
+    const res = await fetch(`/api/threads?${vaultParam()}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ts),
