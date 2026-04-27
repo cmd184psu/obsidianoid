@@ -24,6 +24,8 @@ no Obsidian installation required.
     index.html
     css/app.css
     js/app.js
+    js/threads.ts   ← TypeScript source (edit this)
+    js/threads.js   ← compiled output of threads.ts (build artifact, do not edit)
 
 /usr/local/bin/obsidianoid   ← compiled binary
 
@@ -40,6 +42,7 @@ no Obsidian installation required.
 | Tool | Purpose |
 |------|---------|
 | Go 1.21+ | Build the binary |
+| Node.js 18+ / npm | Compile TypeScript frontend (`make web`) |
 | make | Run Makefile targets |
 | systemd | Service management (Linux) |
 
@@ -52,8 +55,12 @@ no Obsidian installation required.
 ```bash
 cd /opt/obsidianoid
 go mod tidy
-make build
+make build          # compiles TypeScript then builds the Go binary
 ```
+
+`make build` runs `make web` first, which installs npm deps automatically
+(via `npm install`) if `node_modules/` is absent, then compiles
+`static/js/threads.ts` → `static/js/threads.js` with esbuild.
 
 ### Cross-compile for Raspberry Pi (arm64 — Pi 3B+, 4, 5)
 
@@ -68,6 +75,10 @@ make build-pi
 make build-pi-armv7
 # produces: ./obsidianoid-armv7
 ```
+
+The Pi cross-compile targets build only the Go binary and do not run the web
+build step. Run `make web` on your host machine first so that
+`static/js/threads.js` exists before copying static assets to the Pi.
 
 Copy the binary to the Pi:
 
@@ -145,6 +156,9 @@ home directory).
 | `cert_file` | no | `~/.obsidianoid/server.crt` | Path to PEM certificate |
 | `key_file` | no | `~/.obsidianoid/server.key` | Path to PEM private key |
 | `custom_css` | no | — | Path to a CSS file that overrides the embedded markdown preview styles |
+| `threads_folder` | no | `"Threads"` | Vault subfolder containing thread markdown files (`Thread01.md` … `ThreadN.md`) |
+| `thread_count` | no | `4` | Number of thread slots |
+| `thread_states` | no | all enabled | Per-slot enabled/disabled state, e.g. `[{"disabled":false},{"disabled":true},…]` |
 
 ### custom_css
 
