@@ -70,6 +70,11 @@ input, textarea { font: inherit; color: inherit; }
   color: var(--color-text);
 }
 #topbar-actions button:disabled { opacity: 0.4; cursor: default; }
+#btn-autosave.active {
+  background: var(--color-primary-highlight);
+  color: var(--color-primary);
+  border-color: var(--color-primary-active);
+}
 #btn-toggle-mode.preview-active {
   background: var(--color-primary-highlight);
   color: var(--color-primary);

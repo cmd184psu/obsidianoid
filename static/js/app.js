@@ -8,6 +8,7 @@ const state = {
   mode: 'notes',
   activeVault: 0,
   vaults: [],
+  autoSave: true,
 };
 
 /* ─── Element refs ─── */
@@ -37,6 +38,7 @@ const vaultSelector  = document.getElementById('vault-selector');
 const btnHamburger   = document.getElementById('btn-hamburger');
 const themePanel     = document.getElementById('theme-panel');
 const themeOptions   = document.getElementById('theme-options');
+const btnAutoSave    = document.getElementById('btn-autosave');
 
 /* ─── Theme definitions ─── */
 const THEMES = [
@@ -47,7 +49,6 @@ const THEMES = [
   { name: 'rose',   label: 'Rose',   color: '#e05c7a' },
 ];
 
-/* ─── Vault param helper ─── */
 function vaultParam() { return `vault=${state.activeVault}`; }
 
 /* ─── Toast ─── */
@@ -272,12 +273,22 @@ async function saveNote() {
   }
 }
 
+/* ─── Auto-save idle timer ─── */
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  if (state.autoSave && state.isDirty && state.currentPath) {
+    autoSaveTimer = setTimeout(saveNote, 1000);
+  }
+}
+
 /* ─── Dirty tracking ─── */
 editorPane.addEventListener('input', () => {
   if (!state.isDirty) {
     state.isDirty = true;
     btnSave.disabled = false;
   }
+  scheduleAutoSave();
 });
 
 /* ─── Keyboard shortcuts ─── */
@@ -295,6 +306,12 @@ document.addEventListener('keydown', e => {
 /* ─── Button wiring ─── */
 btnToggle.addEventListener('click', toggleMode);
 btnSave.addEventListener('click', saveNote);
+
+btnAutoSave.addEventListener('click', () => {
+  state.autoSave = !state.autoSave;
+  btnAutoSave.classList.toggle('active', state.autoSave);
+  state.autoSave ? scheduleAutoSave() : clearTimeout(autoSaveTimer);
+});
 
 btnNewNote.addEventListener('click', () => {
   newNotePath.value = '';
@@ -355,11 +372,9 @@ searchInput.addEventListener('input', () => {
 /* ─── Git sync ─── */
 async function checkGitAvailable() {
   try {
-    const res = await fetch(`/api/git/status?${vaultParam()}`);
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await (await fetch(`/api/git/status?${vaultParam()}`)).json();
     btnGitSync.hidden = !data.available;
-  } catch (e) { /* vault has no git repo — button stays hidden */ }
+  } catch (e) {}
 }
 
 btnGitSync.addEventListener('click', () => {
@@ -384,12 +399,8 @@ gitSyncForm.addEventListener('submit', async (e) => {
       body: JSON.stringify({ message }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast('✓ Synced', 'success');
-    } else {
-      showToast('Sync failed — see console', 'error');
-      console.error('git sync:', data.output);
-    }
+    if (data.ok) showToast('✓ Synced', 'success');
+    else { showToast('Sync failed — see console', 'error'); console.error('git sync:', data.output); }
   } catch (e) {
     showToast('Sync failed', 'error');
   } finally {
@@ -399,6 +410,7 @@ gitSyncForm.addEventListener('submit', async (e) => {
 
 /* ─── Mode switching ─── */
 function setMode(mode) {
+  if (state.mode === 'threads' && mode !== 'threads') ThreadsView.flush();
   state.mode = mode;
   document.getElementById('app').dataset.mode = mode;
   document.getElementById('btn-mode-notes').classList.toggle('active', mode === 'notes');
@@ -412,9 +424,7 @@ document.getElementById('btn-mode-threads').addEventListener('click', () => setM
 /* ─── Theme panel ─── */
 function setTheme(name) {
   document.documentElement.dataset.theme = name;
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.theme === name);
-  });
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
 }
 
 function buildThemePanel() {
@@ -429,14 +439,8 @@ function buildThemePanel() {
 }
 
 function toggleThemePanel() {
-  const hidden = themePanel.hasAttribute('hidden');
-  if (hidden) {
-    themePanel.removeAttribute('hidden');
-    btnHamburger.classList.add('active');
-  } else {
-    themePanel.setAttribute('hidden', '');
-    btnHamburger.classList.remove('active');
-  }
+  const nowHidden = themePanel.toggleAttribute('hidden');
+  btnHamburger.classList.toggle('active', !nowHidden);
 }
 
 btnHamburger.addEventListener('click', (e) => { e.stopPropagation(); toggleThemePanel(); });
@@ -447,7 +451,14 @@ document.addEventListener('click', (e) => {
   }
 });
 
-/* ─── Vault switching ─── */
+async function fetchConfig() {
+  try {
+    const d = await (await fetch('/api/config')).json();
+    state.autoSave = d.autosave !== false;
+    btnAutoSave.classList.toggle('active', state.autoSave);
+  } catch (e) { /* keep default */ }
+}
+
 async function fetchVaults() {
   try {
     const res = await fetch('/api/vaults');
@@ -465,6 +476,7 @@ async function fetchVaults() {
 }
 
 function switchVault(idx) {
+  clearTimeout(autoSaveTimer);
   state.activeVault = idx;
   state.currentPath = null;
   state.isDirty = false;
@@ -472,8 +484,7 @@ function switchVault(idx) {
   btnToggle.disabled = true;
   btnSave.disabled = true;
   setEditorMode();
-  const theme = (state.vaults[idx] && state.vaults[idx].theme) ? state.vaults[idx].theme : 'dark';
-  setTheme(theme);
+  setTheme((state.vaults[idx] && state.vaults[idx].theme) ? state.vaults[idx].theme : 'dark');
   reconnectEvents();
   checkGitAvailable();
   fetchTree();
@@ -482,8 +493,8 @@ function switchVault(idx) {
 vaultSelector.addEventListener('change', () => switchVault(parseInt(vaultSelector.value)));
 
 /* ─── Init ─── */
-buildThemePanel();
+buildThemePanel(); btnAutoSave.classList.add('active');
 ThreadsView.init();
 reconnectEvents();
 checkGitAvailable();
-fetchVaults().then(fetchTree);
+Promise.all([fetchConfig(), fetchVaults()]).then(fetchTree);

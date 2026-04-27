@@ -8,6 +8,7 @@ interface Thread {
 interface ThreadsViewAPI {
   init(): void;
   activate(): Promise<void>;
+  flush(): Promise<void>;
 }
 
 // showToast is a global defined in app.js
@@ -154,6 +155,13 @@ window.ThreadsView = (function (): ThreadsViewAPI {
 
     if (action === 'edit') {
       if (threads[index].disabled) return;
+      if (editingIndex !== null && editingIndex !== index) {
+        captureDraft();
+        const oldContent = threads[editingIndex].content;
+        threads[editingIndex].content = draftContent;
+        renderCache.delete(oldContent);
+        saveThreads(threads).catch(() => showToast('Save failed', 'error'));
+      }
       editingIndex = index;
       draftContent = threads[index].content;
       renderApp();
@@ -218,5 +226,16 @@ window.ThreadsView = (function (): ThreadsViewAPI {
     await renderApp();
   }
 
-  return { init, activate };
+  async function flush(): Promise<void> {
+    if (editingIndex === null) return;
+    captureDraft();
+    const oldContent = threads[editingIndex].content;
+    threads[editingIndex].content = draftContent;
+    renderCache.delete(oldContent);
+    editingIndex = null;
+    draftContent = '';
+    await saveThreads(threads);
+  }
+
+  return { init, activate, flush };
 })();
