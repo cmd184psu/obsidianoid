@@ -7,13 +7,21 @@ import (
 	"path/filepath"
 )
 
+type ThreadState struct {
+	Disabled bool `json:"disabled"`
+}
+
 // Config holds obsidianoid runtime configuration.
 type Config struct {
-	VaultPath string `json:"vault_path"`
-	CustomCSS string `json:"custom_css,omitempty"`
-	CertFile  string `json:"cert_file,omitempty"`
-	KeyFile   string `json:"key_file,omitempty"`
-	Port      int    `json:"port,omitempty"`
+	VaultPath     string        `json:"vault_path"`
+	CustomCSS     string        `json:"custom_css,omitempty"`
+	CertFile      string        `json:"cert_file,omitempty"`
+	KeyFile       string        `json:"key_file,omitempty"`
+	Port          int           `json:"port,omitempty"`
+	ThreadsFolder string        `json:"threads_folder,omitempty"`
+	ThreadCount   int           `json:"thread_count,omitempty"`
+	ThreadStates  []ThreadState `json:"thread_states,omitempty"`
+	ConfigPath    string        `json:"-"`
 }
 
 func DefaultPath() string {
@@ -44,6 +52,18 @@ func Load(path string) (*Config, error) {
 		home, _ := os.UserHomeDir()
 		c.KeyFile = filepath.Join(home, ".obsidianoid", "server.key")
 	}
+	if c.ThreadsFolder == "" {
+		c.ThreadsFolder = "Threads"
+	}
+	if c.ThreadCount == 0 {
+		c.ThreadCount = 4
+	}
+	// Normalize ThreadStates length to match ThreadCount.
+	for len(c.ThreadStates) < c.ThreadCount {
+		c.ThreadStates = append(c.ThreadStates, ThreadState{})
+	}
+	c.ThreadStates = c.ThreadStates[:c.ThreadCount]
+	c.ConfigPath = path
 	return &c, nil
 }
 

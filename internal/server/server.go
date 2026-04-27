@@ -9,12 +9,19 @@ import (
 	"path/filepath"
 
 	"obsidianoid/internal/config"
+	"obsidianoid/internal/git"
+	"obsidianoid/internal/threads"
 	"obsidianoid/internal/vault"
 	"github.com/russross/blackfriday/v2"
 )
 
 func New(cfg *config.Config) http.Handler {
 	mux := http.NewServeMux()
+
+	broker := newEventBroker()
+	startVaultWatcher(cfg.VaultPath, broker)
+	mux.HandleFunc("/api/events", broker.serveSSE)
+
 
 	mux.HandleFunc("/api/tree", func(w http.ResponseWriter, r *http.Request) {
 		tree, err := vault.Tree(cfg.VaultPath)
@@ -88,6 +95,86 @@ func New(cfg *config.Config) http.Handler {
 		html := blackfriday.Run(body, blackfriday.WithExtensions(flags), blackfriday.WithRenderer(renderer))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(html)
+	})
+
+	mux.HandleFunc("/api/threads", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			ts, err := threads.ReadAll(cfg.VaultPath, cfg)
+			if err != nil {
+				http.Error(w, "failed to read threads", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(ts)
+
+		case http.MethodPut:
+			var incoming []threads.Thread
+			if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			if len(incoming) != cfg.ThreadCount {
+				http.Error(w, "wrong thread count", http.StatusBadRequest)
+				return
+			}
+			if err := threads.WriteAll(cfg.VaultPath, cfg.ThreadsFolder, incoming); err != nil {
+				http.Error(w, "write error", http.StatusInternalServerError)
+				return
+			}
+			for i, t := range incoming {
+				cfg.ThreadStates[i].Disabled = t.Disabled
+			}
+			if cfg.ConfigPath != "" {
+				_ = config.Save(cfg.ConfigPath, cfg)
+			}
+			w.WriteHeader(http.StatusNoContent)
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/git/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"available":%v}`, git.IsAvailable(cfg.VaultPath))
+	})
+
+	mux.HandleFunc("/api/git/sync", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !git.IsAvailable(cfg.VaultPath) {
+			http.Error(w, "git not available", http.StatusNotFound)
+			return
+		}
+		var body struct {
+			Message string `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if body.Message == "" {
+			body.Message = "obsidianoid sync"
+		}
+		type result struct {
+			OK     bool   `json:"ok"`
+			Output string `json:"output"`
+		}
+		output, err := git.Sync(cfg.VaultPath, body.Message)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(result{OK: false, Output: output})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(result{OK: true, Output: output})
 	})
 
 	mux.HandleFunc("/api/custom-css", func(w http.ResponseWriter, r *http.Request) {

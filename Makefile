@@ -8,14 +8,29 @@ STATIC_DIR := $(APP_DIR)/static
 SVC_FILE   := obsidianoid.service
 SVC_DIR    := /etc/systemd/system
 GO         := go
+NPM        := npm
 
-.PHONY: all build install uninstall start stop restart status logs clean test
+.PHONY: all build build-pi build-pi-armv7 install uninstall start stop restart status logs clean test typecheck web deps
 
-## Default: build the binary
+## Default: build web assets then the binary
 all: build
 
-## Compile the binary for the current platform
-build:
+## Install npm dependencies
+deps:
+	$(NPM) install
+
+## Compile TypeScript → JS.  Installs npm deps automatically if node_modules is absent.
+web:
+	@if [ ! -d node_modules ]; then $(NPM) install; fi
+	$(NPM) run build
+	@echo "Built static/js/threads.js"
+
+## Type-check TypeScript without emitting
+typecheck:
+	$(NPM) run typecheck
+
+## Compile the binary for the current platform (also builds web assets)
+build: web
 	$(GO) build -o $(BINARY) ./cmd/obsidianoid/
 	@echo "Built ./$(BINARY)"
 
@@ -92,4 +107,4 @@ logs:
 	journalctl -u $(BINARY) -f
 
 clean:
-	rm -f $(BINARY) $(BINARY)-arm64 $(BINARY)-armv7
+	rm -f $(BINARY) $(BINARY)-arm64 $(BINARY)-armv7 static/js/threads.js

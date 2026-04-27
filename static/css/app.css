@@ -449,6 +449,285 @@ dialog input[type="text"]:focus { border-color: var(--color-primary); outline: n
 @media (max-width: 640px) {
   :root { --sidebar-width: 200px; }
 }
+@media (max-width: 860px) {
+  #threads-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── App flex container ─── */
+/* Makes #app a proper flex column so workspace and threads-view share the remaining height */
+#app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Mode switcher ─── */
+#mode-switcher {
+  display: flex;
+  gap: 2px;
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  flex-shrink: 0;
+}
+#mode-switcher button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+#mode-switcher button.active {
+  background: var(--color-surface-dynamic);
+  color: var(--color-text);
+}
+#mode-switcher button:hover:not(.active) { color: var(--color-text); }
+
+/* ─── Mode visibility ─── */
+#threads-view { display: none; }
+#app[data-mode="threads"] #workspace      { display: none; }
+#app[data-mode="threads"] #topbar-actions { display: none; }
+#app[data-mode="threads"] #threads-view {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: var(--space-6);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* ─── Threads grid ─── */
+#threads-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ─── Thread cards ─── */
+.thread-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+  transition: border-color var(--transition);
+  overflow: hidden;
+}
+.thread-card:not(.disabled):hover { border-color: var(--color-text-faint); }
+.thread-card.disabled { opacity: 0.55; }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  flex-shrink: 0;
+  background: var(--color-surface-2);
+}
+.card-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.card-header-spacer { flex: 1; }
+
+.card-btn {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+.card-btn:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.card-btn:disabled { opacity: 0.4; cursor: default; }
+.btn-save {
+  background: var(--color-primary-highlight);
+  color: var(--color-primary);
+  border-color: var(--color-primary-active);
+}
+.btn-save:hover:not(:disabled) {
+  background: var(--color-primary) !important;
+  color: #fff !important;
+}
+
+.card-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  padding: var(--space-4);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: none;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  outline: none;
+  tab-size: 4;
+}
+
+/* ─── md-render (markdown in thread cards) ─── */
+.md-render {
+  padding: var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--color-text);
+  overflow-y: auto;
+  max-height: 380px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.md-render h1, .md-render h2, .md-render h3, .md-render h4, .md-render h5, .md-render h6 {
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+.md-render h1 { font-size: 1.2em; }
+.md-render h2 { font-size: 1.1em; }
+.md-render h3 { font-size: 1em; }
+.md-render p  { margin-bottom: 0.75em; }
+.md-render a  { color: var(--color-primary); text-decoration: underline; }
+.md-render a:hover { color: var(--color-primary-hover); }
+.md-render code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+.md-render pre {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+.md-render pre code { background: none; border: none; padding: 0; font-size: var(--text-sm); }
+.md-render blockquote {
+  border-left: 3px solid var(--color-primary);
+  margin: 0 0 0.75em;
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.md-render ul, .md-render ol { padding-left: 1.75em; margin-bottom: 0.75em; }
+.md-render li { margin-bottom: 0.2em; }
+.md-render hr { border: none; border-top: 1px solid var(--color-divider); margin: 1em 0; }
+.md-render del { color: var(--color-text-faint); }
+.md-empty { color: var(--color-text-faint); font-style: italic; }
+
+/* ─── Disabled overlay ─── */
+.disabled-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  color: var(--color-text-faint);
+  background: rgba(19, 19, 26, 0.72); /* matches --color-bg at 72% opacity */
+  pointer-events: none;
+}
+
+/* ─── Toggle switch ─── */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.toggle-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  width: 2.5ch;
+  text-align: right;
+}
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  transition: background var(--transition), border-color var(--transition);
+}
+.toggle input:checked + .toggle-track {
+  background: var(--color-primary-highlight);
+  border-color: var(--color-primary-active);
+}
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--color-text-faint);
+  border-radius: var(--radius-full);
+  transition: transform var(--transition), background var(--transition);
+  pointer-events: none;
+}
+.toggle input:checked ~ .toggle-thumb {
+  transform: translateX(16px);
+  background: var(--color-primary);
+}
+
+/* ─── Threads loading / error states ─── */
+.threads-loading, .threads-error {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--color-text-faint);
+  font-size: var(--text-sm);
+}
+.threads-error { color: var(--color-error); }
 
 /* ─── Touch devices ─── */
 @media (hover: none) and (pointer: coarse) {

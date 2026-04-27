@@ -5,10 +5,16 @@ const state = {
   isDirty: false,
   treeData: null,
   filterText: '',
+  mode: 'notes',
 };
 
 /* ─── Element refs ─── */
 const fileTree       = document.getElementById('file-tree');
+const btnGitSync     = document.getElementById('btn-git-sync');
+const gitSyncDialog  = document.getElementById('git-sync-dialog');
+const gitSyncForm    = document.getElementById('git-sync-form');
+const gitCommitMsg   = document.getElementById('git-commit-msg');
+const btnCancelSync  = document.getElementById('btn-cancel-sync');
 const editorPane     = document.getElementById('editor-pane');
 const previewPane    = document.getElementById('preview-pane');
 const emptyState     = document.getElementById('empty-state');
@@ -136,16 +142,54 @@ async function loadNote(path) {
     const text = await res.text();
     state.currentPath = path;
     state.isDirty = false;
-    state.isPreviewMode = false;
+    state.isPreviewMode = true;  // open in preview by default
     editorPane.value = text;
     noteTitle.textContent = path;
     btnToggle.disabled = false;
     btnSave.disabled = true;
+    await renderPreview(text);
     setEditorMode();
     syncActiveHighlight();
   } catch (e) {
     showToast('Network error loading note', 'error');
   }
+}
+
+/* ─── Render preview pane from raw text ─── */
+async function renderPreview(text) {
+  try {
+    const res = await fetch('/api/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    });
+    const html = await res.text();
+    previewPane.innerHTML = `<div class="md-body">${html}</div>`;
+  } catch (e) {
+    previewPane.innerHTML = `<div class="md-body"><p style="color:var(--color-error)">Render failed</p></div>`;
+  }
+}
+
+/* ─── Reload current note from disk (used by SSE live-update) ─── */
+async function reloadCurrentNote() {
+  if (!state.currentPath || state.isDirty) return;
+  try {
+    const res = await fetch(`/api/note?path=${encodeURIComponent(state.currentPath)}`);
+    if (!res.ok) return;
+    const text = await res.text();
+    editorPane.value = text;
+    if (state.isPreviewMode) await renderPreview(text);
+  } catch (e) { /* silently ignore network errors during background reload */ }
+}
+
+/* ─── Server-Sent Events: watch for vault changes from other clients ─── */
+function connectEvents() {
+  const es = new EventSource('/api/events');
+  es.addEventListener('note-changed', (e) => {
+    const data = JSON.parse(e.data);
+    if (data.path === state.currentPath) reloadCurrentNote();
+  });
+  // EventSource reconnects automatically on error; no explicit onerror handler needed.
 }
 
 /* ─── Editor / Preview toggle ─── */
@@ -186,20 +230,7 @@ function setEditorMode() {
 async function toggleMode() {
   if (!state.currentPath) return;
   state.isPreviewMode = !state.isPreviewMode;
-  if (state.isPreviewMode) {
-    // render markdown
-    try {
-      const res = await fetch('/api/render', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: editorPane.value,
-      });
-      const html = await res.text();
-      previewPane.innerHTML = `<div class="md-body">${html}</div>`;
-    } catch (e) {
-      previewPane.innerHTML = `<div class="md-body"><p style="color:var(--color-error)">Render failed</p></div>`;
-    }
-  }
+  if (state.isPreviewMode) await renderPreview(editorPane.value);
   setEditorMode();
 }
 
@@ -302,5 +333,65 @@ searchInput.addEventListener('input', () => {
   renderTree();
 });
 
+/* ─── Git sync ─── */
+async function checkGitAvailable() {
+  try {
+    const res = await fetch('/api/git/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.available) btnGitSync.hidden = false;
+  } catch (e) { /* vault has no git repo — button stays hidden */ }
+}
+
+btnGitSync.addEventListener('click', () => {
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 16).replace('T', ' ');
+  gitCommitMsg.value = `obsidianoid sync ${ts}`;
+  gitSyncDialog.showModal();
+  gitCommitMsg.select();
+});
+
+btnCancelSync.addEventListener('click', () => gitSyncDialog.close());
+
+gitSyncForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const message = gitCommitMsg.value.trim() || 'obsidianoid sync';
+  gitSyncDialog.close();
+  btnGitSync.disabled = true;
+  try {
+    const res = await fetch('/api/git/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('✓ Synced', 'success');
+    } else {
+      showToast('Sync failed — see console', 'error');
+      console.error('git sync:', data.output);
+    }
+  } catch (e) {
+    showToast('Sync failed', 'error');
+  } finally {
+    btnGitSync.disabled = false;
+  }
+});
+
+/* ─── Mode switching ─── */
+function setMode(mode) {
+  state.mode = mode;
+  document.getElementById('app').dataset.mode = mode;
+  document.getElementById('btn-mode-notes').classList.toggle('active', mode === 'notes');
+  document.getElementById('btn-mode-threads').classList.toggle('active', mode === 'threads');
+  if (mode === 'threads') ThreadsView.activate();
+}
+
+document.getElementById('btn-mode-notes').addEventListener('click', () => setMode('notes'));
+document.getElementById('btn-mode-threads').addEventListener('click', () => setMode('threads'));
+
 /* ─── Init ─── */
+ThreadsView.init();
+connectEvents();
+checkGitAvailable();
 fetchTree();

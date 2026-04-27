@@ -1,0 +1,9 @@
+# Build artifacts
+obsidianoid
+obsidianoid-arm64
+obsidianoid-armv7
+static/js/threads.js
+
+# Node.js
+node_modules/
+npm-debug.log*
