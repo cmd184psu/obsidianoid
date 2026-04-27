@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"obsidianoid/internal/config"
 	"obsidianoid/internal/git"
@@ -15,16 +16,56 @@ import (
 	"github.com/russross/blackfriday/v2"
 )
 
+// vaultIdx returns the validated vault index from the ?vault=N query param.
+// Out-of-range or missing values default to 0.
+func vaultIdx(cfg *config.Config, r *http.Request) int {
+	idx, _ := strconv.Atoi(r.URL.Query().Get("vault"))
+	if idx < 0 || idx >= len(cfg.Vaults) {
+		return 0
+	}
+	return idx
+}
+
+// vaultPathFor returns the filesystem path for the requested vault index.
+func vaultPathFor(cfg *config.Config, r *http.Request) string {
+	return cfg.Vaults[vaultIdx(cfg, r)].Path
+}
+
+// vaultInfo holds the public-facing vault metadata (no filesystem paths exposed).
+type vaultInfo struct {
+	Name  string `json:"name"`
+	Theme string `json:"theme"`
+}
+
 func New(cfg *config.Config) http.Handler {
 	mux := http.NewServeMux()
 
-	broker := newEventBroker()
-	startVaultWatcher(cfg.VaultPath, broker)
-	mux.HandleFunc("/api/events", broker.serveSSE)
+	brokers := make([]*eventBroker, len(cfg.Vaults))
+	for i, v := range cfg.Vaults {
+		b := newEventBroker()
+		brokers[i] = b
+		startVaultWatcher(v.Path, b)
+	}
 
+	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
+		brokers[vaultIdx(cfg, r)].serveSSE(w, r)
+	})
+
+	mux.HandleFunc("/api/vaults", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		info := make([]vaultInfo, len(cfg.Vaults))
+		for i, v := range cfg.Vaults {
+			info[i] = vaultInfo{Name: v.Name, Theme: v.Theme}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(info)
+	})
 
 	mux.HandleFunc("/api/tree", func(w http.ResponseWriter, r *http.Request) {
-		tree, err := vault.Tree(cfg.VaultPath)
+		tree, err := vault.Tree(vaultPathFor(cfg, r))
 		if err != nil {
 			http.Error(w, "failed to list vault", http.StatusInternalServerError)
 			return
@@ -39,9 +80,10 @@ func New(cfg *config.Config) http.Handler {
 			http.Error(w, "path required", http.StatusBadRequest)
 			return
 		}
+		root := vaultPathFor(cfg, r)
 		switch r.Method {
 		case http.MethodGet:
-			content, err := vault.ReadNote(cfg.VaultPath, rel)
+			content, err := vault.ReadNote(root, rel)
 			if err != nil {
 				if os.IsNotExist(err) || os.IsPermission(err) {
 					http.Error(w, "note not found", http.StatusNotFound)
@@ -59,7 +101,7 @@ func New(cfg *config.Config) http.Handler {
 				http.Error(w, "read body failed", http.StatusBadRequest)
 				return
 			}
-			if err := vault.WriteNote(cfg.VaultPath, rel, body); err != nil {
+			if err := vault.WriteNote(root, rel, body); err != nil {
 				if os.IsPermission(err) {
 					http.Error(w, "forbidden", http.StatusForbidden)
 				} else {
@@ -98,9 +140,10 @@ func New(cfg *config.Config) http.Handler {
 	})
 
 	mux.HandleFunc("/api/threads", func(w http.ResponseWriter, r *http.Request) {
+		root := vaultPathFor(cfg, r)
 		switch r.Method {
 		case http.MethodGet:
-			ts, err := threads.ReadAll(cfg.VaultPath, cfg)
+			ts, err := threads.ReadAll(root, cfg)
 			if err != nil {
 				http.Error(w, "failed to read threads", http.StatusInternalServerError)
 				return
@@ -118,7 +161,7 @@ func New(cfg *config.Config) http.Handler {
 				http.Error(w, "wrong thread count", http.StatusBadRequest)
 				return
 			}
-			if err := threads.WriteAll(cfg.VaultPath, cfg.ThreadsFolder, incoming); err != nil {
+			if err := threads.WriteAll(root, cfg.ThreadsFolder, incoming); err != nil {
 				http.Error(w, "write error", http.StatusInternalServerError)
 				return
 			}
@@ -141,7 +184,7 @@ func New(cfg *config.Config) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"available":%v}`, git.IsAvailable(cfg.VaultPath))
+		fmt.Fprintf(w, `{"available":%v}`, git.IsAvailable(vaultPathFor(cfg, r)))
 	})
 
 	mux.HandleFunc("/api/git/sync", func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +192,8 @@ func New(cfg *config.Config) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !git.IsAvailable(cfg.VaultPath) {
+		root := vaultPathFor(cfg, r)
+		if !git.IsAvailable(root) {
 			http.Error(w, "git not available", http.StatusNotFound)
 			return
 		}
@@ -167,7 +211,7 @@ func New(cfg *config.Config) http.Handler {
 			OK     bool   `json:"ok"`
 			Output string `json:"output"`
 		}
-		output, err := git.Sync(cfg.VaultPath, body.Message)
+		output, err := git.Sync(root, body.Message)
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Obsidianoid</title>
+  <link rel="stylesheet" href="/css/themes.css" />
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -46,14 +47,24 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
           <span>Sync</span>
         </button>
+        <button id="btn-hamburger" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
       </div>
     </header>
+
+    <!-- Theme panel (toggled by hamburger) -->
+    <div id="theme-panel" hidden>
+      <p>Theme</p>
+      <div id="theme-options"></div>
+    </div>
 
     <div id="workspace">
       <!-- Resizable sidebar -->
       <aside id="sidebar">
         <div id="sidebar-header">
           <span>Files</span>
+          <select id="vault-selector" aria-label="Switch vault"></select>
           <input id="search-input" type="search" placeholder="Filter notes…" aria-label="Filter notes" />
         </div>
         <div id="file-tree" role="tree" aria-label="Vault file tree">

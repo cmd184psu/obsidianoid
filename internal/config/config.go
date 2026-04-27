@@ -11,9 +11,17 @@ type ThreadState struct {
 	Disabled bool `json:"disabled"`
 }
 
+// VaultConfig holds the path, display name, and color theme for one vault.
+type VaultConfig struct {
+	Path  string `json:"path"`
+	Name  string `json:"name"`
+	Theme string `json:"theme"`
+}
+
 // Config holds obsidianoid runtime configuration.
 type Config struct {
-	VaultPath     string        `json:"vault_path"`
+	Vaults        []VaultConfig `json:"vaults,omitempty"`
+	VaultPath     string        `json:"vault_path,omitempty"` // legacy: migrated to Vaults on load
 	CustomCSS     string        `json:"custom_css,omitempty"`
 	CertFile      string        `json:"cert_file,omitempty"`
 	KeyFile       string        `json:"key_file,omitempty"`
@@ -38,8 +46,16 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
-	if c.VaultPath == "" {
-		return nil, errors.New("vault_path is required in config")
+	if len(c.Vaults) == 0 && c.VaultPath != "" {
+		c.Vaults = []VaultConfig{{Path: c.VaultPath, Name: "Vault", Theme: "dark"}}
+	}
+	if len(c.Vaults) == 0 {
+		return nil, errors.New("vaults list is required in config")
+	}
+	for i := range c.Vaults {
+		if c.Vaults[i].Theme == "" {
+			c.Vaults[i].Theme = "dark"
+		}
 	}
 	if c.Port == 0 {
 		c.Port = 8989
@@ -58,7 +74,6 @@ func Load(path string) (*Config, error) {
 	if c.ThreadCount == 0 {
 		c.ThreadCount = 4
 	}
-	// Normalize ThreadStates length to match ThreadCount.
 	for len(c.ThreadStates) < c.ThreadCount {
 		c.ThreadStates = append(c.ThreadStates, ThreadState{})
 	}

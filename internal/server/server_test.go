@@ -17,8 +17,12 @@ import (
 	"obsidianoid/internal/server"
 )
 
-func newTestServer(t *testing.T) (*httptest.Server, string) {
+// newTestServer creates a test server with two vaults. The first vault
+// contains Hello.md + subdir/Sub.md + Threads/. The second vault contains
+// only AltNote.md. Returns the server and both vault root paths.
+func newTestServer(t *testing.T) (*httptest.Server, string, string) {
 	t.Helper()
+
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "Hello.md"), []byte("# Hello\nWorld"), 0o644)
 	sub := filepath.Join(root, "subdir")
@@ -32,8 +36,14 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		_ = os.WriteFile(name, []byte(fmt.Sprintf("thread %d content", i)), 0o644)
 	}
 
+	root2 := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root2, "AltNote.md"), []byte("# Alt\nVault Two"), 0o644)
+
 	cfg := &config.Config{
-		VaultPath:     root,
+		Vaults: []config.VaultConfig{
+			{Path: root, Name: "Work", Theme: "dark"},
+			{Path: root2, Name: "Personal", Theme: "forest"},
+		},
 		Port:          8989,
 		ThreadsFolder: "Threads",
 		ThreadCount:   4,
@@ -43,12 +53,12 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	h := server.New(cfg)
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
-	return ts, root
+	return ts, root, root2
 }
 
 func TestAPITree(t *testing.T) {
-	t.Run("GET /api/tree returns JSON tree", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+	t.Run("GET /api/tree returns JSON tree for vault 0", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
 		resp, err := http.Get(ts.URL + "/api/tree")
 		if err != nil {
 			t.Fatal(err)
@@ -65,12 +75,115 @@ func TestAPITree(t *testing.T) {
 			t.Error("root should be a directory")
 		}
 	})
+
+	t.Run("GET /api/tree?vault=1 returns tree for vault 1", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
+		resp, err := http.Get(ts.URL + "/api/tree?vault=1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		var node map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&node); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		children, _ := node["children"].([]interface{})
+		found := false
+		for _, child := range children {
+			m, _ := child.(map[string]interface{})
+			if m["name"] == "AltNote" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("vault 1 tree should contain AltNote")
+		}
+	})
+
+	t.Run("GET /api/tree?vault=99 falls back to vault 0", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
+		resp, err := http.Get(ts.URL + "/api/tree?vault=99")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		var node map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&node); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		children, _ := node["children"].([]interface{})
+		found := false
+		for _, child := range children {
+			m, _ := child.(map[string]interface{})
+			if m["name"] == "Hello" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("vault 0 fallback tree should contain Hello")
+		}
+	})
+}
+
+func TestAPIVaults(t *testing.T) {
+	t.Run("GET /api/vaults returns vault names and themes", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
+		resp, err := http.Get(ts.URL + "/api/vaults")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		var vaults []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&vaults); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(vaults) != 2 {
+			t.Fatalf("expected 2 vaults, got %d", len(vaults))
+		}
+		if vaults[0]["name"] != "Work" {
+			t.Errorf("vault 0 name: got %v", vaults[0]["name"])
+		}
+		if vaults[0]["theme"] != "dark" {
+			t.Errorf("vault 0 theme: got %v", vaults[0]["theme"])
+		}
+		if vaults[1]["name"] != "Personal" {
+			t.Errorf("vault 1 name: got %v", vaults[1]["name"])
+		}
+		if vaults[1]["theme"] != "forest" {
+			t.Errorf("vault 1 theme: got %v", vaults[1]["theme"])
+		}
+		// Paths must not be exposed.
+		if _, hasPath := vaults[0]["path"]; hasPath {
+			t.Error("vault response must not include path")
+		}
+	})
 }
 
 func TestAPIGetNote(t *testing.T) {
-	t.Run("GET /api/note returns note content", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+	t.Run("GET /api/note returns note content from vault 0", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
 		resp, err := http.Get(ts.URL + "/api/note?path=Hello.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("GET /api/note returns note from vault 1", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
+		resp, err := http.Get(ts.URL + "/api/note?vault=1&path=AltNote.md")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +196,7 @@ func TestAPIGetNote(t *testing.T) {
 
 func TestAPIGetNoteMissing(t *testing.T) {
 	t.Run("GET /api/note 404 for missing note", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		resp, err := http.Get(ts.URL + "/api/note?path=nope.md")
 		if err != nil {
 			t.Fatal(err)
@@ -96,8 +209,8 @@ func TestAPIGetNoteMissing(t *testing.T) {
 }
 
 func TestAPIPutNote(t *testing.T) {
-	t.Run("PUT /api/note saves content", func(t *testing.T) {
-		ts, root := newTestServer(t)
+	t.Run("PUT /api/note saves content to vault 0", func(t *testing.T) {
+		ts, root, _ := newTestServer(t)
 		body := []byte("# Updated\nnew content")
 		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/note?path=Hello.md", bytes.NewReader(body))
 		resp, err := http.DefaultClient.Do(req)
@@ -113,11 +226,29 @@ func TestAPIPutNote(t *testing.T) {
 			t.Errorf("saved content mismatch")
 		}
 	})
+
+	t.Run("PUT /api/note saves content to vault 1", func(t *testing.T) {
+		ts, _, root2 := newTestServer(t)
+		body := []byte("# Alt Updated")
+		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/note?vault=1&path=AltNote.md", bytes.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("expected 204, got %d", resp.StatusCode)
+		}
+		saved, _ := os.ReadFile(filepath.Join(root2, "AltNote.md"))
+		if string(saved) != string(body) {
+			t.Errorf("saved content mismatch: got %q", string(saved))
+		}
+	})
 }
 
 func TestAPIRender(t *testing.T) {
 	t.Run("POST /api/render returns HTML", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		body := bytes.NewBufferString("# Hello\n\n**bold** text")
 		resp, err := http.Post(ts.URL+"/api/render", "text/plain", body)
 		if err != nil {
@@ -136,7 +267,7 @@ func TestAPIRender(t *testing.T) {
 
 func TestAPINoteMissingPath(t *testing.T) {
 	t.Run("GET /api/note without path returns 400", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		resp, err := http.Get(ts.URL + "/api/note")
 		if err != nil {
 			t.Fatal(err)
@@ -150,7 +281,7 @@ func TestAPINoteMissingPath(t *testing.T) {
 
 func TestAPIGetThreads(t *testing.T) {
 	t.Run("GET /api/threads returns JSON array", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		resp, err := http.Get(ts.URL + "/api/threads")
 		if err != nil {
 			t.Fatal(err)
@@ -174,7 +305,7 @@ func TestAPIGetThreads(t *testing.T) {
 
 func TestAPIPutThreads(t *testing.T) {
 	t.Run("PUT /api/threads writes content and returns 204", func(t *testing.T) {
-		ts, root := newTestServer(t)
+		ts, root, _ := newTestServer(t)
 		payload := `[
 			{"content":"updated 1","disabled":false},
 			{"content":"updated 2","disabled":true},
@@ -198,7 +329,7 @@ func TestAPIPutThreads(t *testing.T) {
 	})
 
 	t.Run("PUT /api/threads with wrong count returns 400", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		payload := `[{"content":"only one","disabled":false}]`
 		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/threads", bytes.NewBufferString(payload))
 		req.Header.Set("Content-Type", "application/json")
@@ -215,7 +346,7 @@ func TestAPIPutThreads(t *testing.T) {
 
 func TestAPIEvents(t *testing.T) {
 	t.Run("GET /api/events returns text/event-stream", func(t *testing.T) {
-		ts, _ := newTestServer(t)
+		ts, _, _ := newTestServer(t)
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 		defer cancel()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/events", nil)
