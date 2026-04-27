@@ -147,6 +147,22 @@ func TestEmptyVaultsRejected(t *testing.T) {
 	})
 }
 
+func TestAutoSaveDisabled(t *testing.T) {
+	t.Run("autosave_disabled flag is preserved", func(t *testing.T) {
+		tmp := t.TempDir()
+		path := filepath.Join(tmp, "obsidianoid.json")
+		raw := `{"vault_path":"/v","autosave_disabled":true}`
+		_ = os.WriteFile(path, []byte(raw), 0o600)
+		c, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !c.AutoSaveDisabled {
+			t.Error("expected AutoSaveDisabled to be true")
+		}
+	})
+}
+
 func TestVaultEmptyThemeDefaultsDark(t *testing.T) {
 	t.Run("vault with empty theme gets dark default", func(t *testing.T) {
 		tmp := t.TempDir()

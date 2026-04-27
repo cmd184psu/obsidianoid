@@ -64,6 +64,15 @@ func New(cfg *config.Config) http.Handler {
 		_ = json.NewEncoder(w).Encode(info)
 	})
 
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"autosave":%v}`, !cfg.AutoSaveDisabled)
+	})
+
 	mux.HandleFunc("/api/tree", func(w http.ResponseWriter, r *http.Request) {
 		tree, err := vault.Tree(vaultPathFor(cfg, r))
 		if err != nil {

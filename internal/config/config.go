@@ -26,10 +26,11 @@ type Config struct {
 	CertFile      string        `json:"cert_file,omitempty"`
 	KeyFile       string        `json:"key_file,omitempty"`
 	Port          int           `json:"port,omitempty"`
-	ThreadsFolder string        `json:"threads_folder,omitempty"`
-	ThreadCount   int           `json:"thread_count,omitempty"`
-	ThreadStates  []ThreadState `json:"thread_states,omitempty"`
-	ConfigPath    string        `json:"-"`
+	ThreadsFolder    string        `json:"threads_folder,omitempty"`
+	ThreadCount      int           `json:"thread_count,omitempty"`
+	ThreadStates     []ThreadState `json:"thread_states,omitempty"`
+	AutoSaveDisabled bool          `json:"autosave_disabled,omitempty"`
+	ConfigPath       string        `json:"-"`
 }
 
 func DefaultPath() string {

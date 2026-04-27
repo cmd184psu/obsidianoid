@@ -168,6 +168,56 @@ func TestAPIVaults(t *testing.T) {
 	})
 }
 
+func TestAPIConfig(t *testing.T) {
+	t.Run("GET /api/config returns autosave true by default", func(t *testing.T) {
+		ts, _, _ := newTestServer(t)
+		resp, err := http.Get(ts.URL + "/api/config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		var data map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if data["autosave"] != true {
+			t.Errorf("expected autosave true, got %v", data["autosave"])
+		}
+	})
+
+	t.Run("GET /api/config returns autosave false when disabled in config", func(t *testing.T) {
+		root := t.TempDir()
+		cfg := &config.Config{
+			Vaults:           []config.VaultConfig{{Path: root, Name: "Work", Theme: "dark"}},
+			Port:             8989,
+			ThreadsFolder:    "Threads",
+			ThreadCount:      4,
+			ThreadStates:     []config.ThreadState{{}, {}, {}, {}},
+			AutoSaveDisabled: true,
+		}
+		os.Setenv("OBSIDIANOID_STATIC", filepath.Join("..", "..", "static"))
+		h := server.New(cfg)
+		ts := httptest.NewServer(h)
+		defer ts.Close()
+
+		resp, err := http.Get(ts.URL + "/api/config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var data map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if data["autosave"] != false {
+			t.Errorf("expected autosave false, got %v", data["autosave"])
+		}
+	})
+}
+
 func TestAPIGetNote(t *testing.T) {
 	t.Run("GET /api/note returns note content from vault 0", func(t *testing.T) {
 		ts, _, _ := newTestServer(t)
